@@ -266,6 +266,8 @@ export interface FormattedDeal {
   source_of_lead: string;
   owner: string;
   associated_company: string;
+  created_at: string;
+  close_date: string;
   web_url: string;
 }
 

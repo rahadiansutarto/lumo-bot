@@ -1,5 +1,6 @@
 import { searchDocs } from "./searchDocs";
 import { attio } from "./attio";
+import { googleCalendar } from "./googleCalendar";
 
 /**
  * Tool interface that all tools must implement
@@ -26,6 +27,7 @@ export interface Tool {
 export const toolRegistry = new Map<string, Tool>([
   ["searchDocs", searchDocs],
   ["attio", attio],
+  ["googleCalendar", googleCalendar],
 ]);
 
 /**

@@ -263,6 +263,50 @@ function extractCompanyRef(attrArray: any[]): string {
 }
 
 /**
+ * Helper to extract and format date/timestamp values
+ */
+function extractDate(attrArray: any[]): string {
+  if (!attrArray || attrArray.length === 0) return "";
+  const first = attrArray[0];
+  
+  // Handle timestamp attribute type (e.g., created_at)
+  if (first.attribute_type === "timestamp" && first.value) {
+    return first.value;
+  }
+  
+  // Handle date attribute type (e.g., delivered, close_date)
+  if (first.attribute_type === "date" && first.value) {
+    return first.value;
+  }
+  
+  // Fallback for other formats
+  if (first.value) return first.value;
+  if (first.original_date) return first.original_date;
+  if (first.date) return first.date;
+  
+  return "";
+}
+
+/**
+ * Helper to format date string to readable format
+ * Handles both ISO timestamps and simple date strings
+ */
+function formatDate(dateStr: string): string {
+  if (!dateStr) return "";
+  
+  try {
+    const date = new Date(dateStr);
+    return date.toLocaleDateString('en-US', { 
+      year: 'numeric', 
+      month: 'short', 
+      day: 'numeric' 
+    });
+  } catch {
+    return dateStr; // Return original if parsing fails
+  }
+}
+
+/**
  * List/Search for deals in Attio
  */
 async function listDeals(apiKey: string, query: string): Promise<AttioToolResponse> {
@@ -301,6 +345,20 @@ async function listDeals(apiKey: string, query: string): Promise<AttioToolRespon
     const owner = extractActor(record.values?.owner);
     const associated_company = extractCompanyRef(record.values?.associated_company);
     
+    // Extract date fields
+    // created_at is in record.values.created_at (timestamp attribute)
+    const createdAtRaw = extractDate(record.values?.created_at);
+    const created_at = formatDate(createdAtRaw);
+    
+    // For close date, check multiple possible fields
+    const closeDateRaw = extractDate(record.values?.delivered) || 
+                         extractDate(record.values?.signature) || 
+                         extractDate(record.values?.contract_start) || 
+                         extractDate(record.values?.close_date) || 
+                         extractDate(record.values?.expected_close_date) || 
+                         "";
+    const close_date = formatDate(closeDateRaw);
+    
     return {
       id: record.id?.record_id,
       name,
@@ -316,6 +374,8 @@ async function listDeals(apiKey: string, query: string): Promise<AttioToolRespon
       source_of_lead,
       owner,
       associated_company,
+      created_at,
+      close_date,
       web_url: record.web_url,
     };
   });

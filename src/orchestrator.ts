@@ -16,6 +16,7 @@ interface ToolCallRequest {
 interface OrchestratorResult {
   response: string;
   toolsUsed: string[];
+  slackBlocks?: any[]; // Slack Block Kit blocks for rich formatting
 }
 
 /**
@@ -24,6 +25,14 @@ interface OrchestratorResult {
 interface ConversationTurn {
   role: "user" | "assistant";
   content: string;
+}
+
+/**
+ * Options for orchestrator
+ */
+interface OrchestratorOptions {
+  userId?: string;      // Slack user ID for personalized tool access
+  channelId?: string;   // Slack channel ID for context
 }
 
 /**
@@ -41,7 +50,10 @@ const MAX_ITERATIONS = 10;
  * 4. If normal response: return to user
  * 5. Repeat until final answer or max iterations
  */
-export async function orchestrate(userMessage: string): Promise<OrchestratorResult> {
+export async function orchestrate(
+  userMessage: string,
+  options: OrchestratorOptions = {}
+): Promise<OrchestratorResult> {
   const conversationHistory: ConversationTurn[] = [];
   const toolsUsed: string[] = [];
   let iterations = 0;
@@ -90,10 +102,34 @@ export async function orchestrate(userMessage: string): Promise<OrchestratorResu
       continue;
     }
 
-    // Execute tool safely
+    // Execute tool safely with user context
     let toolResult: string;
+    let slackBlocks: any[] | undefined;
+    
     try {
-      const result = await tool.execute(toolRequest.parameters);
+      // Pass userId to tool for personalized access
+      const toolParams = {
+        ...toolRequest.parameters,
+        userId: options.userId,
+        channelId: options.channelId,
+      };
+      
+      const result = await tool.execute(toolParams);
+      
+      // Check if tool returned Slack blocks (for rich formatting)
+      if (result.slackBlocks) {
+        slackBlocks = result.slackBlocks;
+      }
+      
+      // If tool requires auth and returned blocks, return immediately with blocks
+      if (result.requiresAuth && slackBlocks) {
+        return {
+          response: result.message || "Authentication required",
+          toolsUsed,
+          slackBlocks,
+        };
+      }
+      
       toolResult = JSON.stringify(result, null, 2);
       toolsUsed.push(toolRequest.tool);
     } catch (error) {

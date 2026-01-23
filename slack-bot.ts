@@ -3,6 +3,7 @@ import AnthropicFoundry from "@anthropic-ai/foundry-sdk";
 import "dotenv/config";
 import { orchestrate } from "./src/orchestrator";
 import { getConfig, printConfig, CONFIG } from "./src/config";
+import { startOAuthServer } from "./src/oauth-server";
 
 // Validate environment before doing anything else
 console.log(" Validating environment variables...");
@@ -11,6 +12,10 @@ console.log(" Environment validation passed!\n");
 
 // Print configuration (with masked keys)
 printConfig();
+
+// Start OAuth callback server for Google Calendar
+console.log("\nStarting OAuth server...");
+startOAuthServer();
 
 // Initialize Anthropic Foundry client
 const claude = new AnthropicFoundry({
@@ -40,7 +45,7 @@ async function getClaude(message: string, userId?: string, channelId?: string) {
   });
   
   const result = await logger.time("orchestration", async () => {
-    return await orchestrate(message);
+    return await orchestrate(message, { userId, channelId });
   });
   
   if (result.toolsUsed.length > 0) {
@@ -50,7 +55,7 @@ async function getClaude(message: string, userId?: string, channelId?: string) {
     });
   }
   
-  return result.response;
+  return result;
 }
 
 // Weather data structure
@@ -133,7 +138,7 @@ async function getWeatherText(areas: string[]): Promise<string> {
     if (w.error) return `${w.name}: ${w.error}`;
     
     return (
-      `Weather for *${w.name}*:\n` +
+      `🌤️ *Weather for ${w.name}:*\n` +
       `• ${w.description}\n` +
       `• Temp: ${w.temp}°C\n` +
       `• Feels like: ${w.feelsLike}°C`
@@ -141,7 +146,7 @@ async function getWeatherText(areas: string[]): Promise<string> {
   }
 
   // Multiple cities - comparison format
-  let response = "Weather Comparison:\n\n";
+  let response = "🌍 *Weather Comparison:*\n\n";
   
   for (const w of weatherResults) {
     if (w.error) {
@@ -159,7 +164,7 @@ async function getWeatherText(areas: string[]): Promise<string> {
     const warmest = validWeather.reduce((a, b) => (a.temp > b.temp ? a : b));
     const coldest = validWeather.reduce((a, b) => (a.temp < b.temp ? a : b));
     
-    response += `Summary:\n`;
+    response += `*Summary:*\n`;
     response += `• Warmest: ${warmest.name} (${warmest.temp}°C)\n`;
     response += `• Coldest: ${coldest.name} (${coldest.temp}°C)`;
   }
@@ -225,10 +230,24 @@ app.event("app_mention", async ({ event, say }) => {
     }
 
     const areas = extractWeatherAreas(rawText);
-    const reply =
-      areas.length > 0 ? await getWeatherText(areas) : await getClaude(rawText, event.user, event.channel);
-
-    await say({ text: reply, thread_ts: event.thread_ts || event.ts });
+    
+    if (areas.length > 0) {
+      const weatherText = await getWeatherText(areas);
+      await say({ text: weatherText, thread_ts: event.thread_ts || event.ts });
+    } else {
+      const result = await getClaude(rawText, event.user, event.channel);
+      
+      // If result has Slack blocks, send with blocks
+      if (result.slackBlocks) {
+        await say({ 
+          text: result.response, // Fallback text
+          blocks: result.slackBlocks,
+          thread_ts: event.thread_ts || event.ts 
+        });
+      } else {
+        await say({ text: result.response, thread_ts: event.thread_ts || event.ts });
+      }
+    }
   } catch (error) {
     logger.error("Error handling mention", error as Error);
     await say(
@@ -255,10 +274,23 @@ app.message(async ({ message, say }) => {
     logger.addContext({ userId, channelType: "dm" });
 
     const areas = extractWeatherAreas(message.text);
-    const reply =
-      areas.length > 0 ? await getWeatherText(areas) : await getClaude(message.text, userId);
-
-    await say(reply);
+    
+    if (areas.length > 0) {
+      const weatherText = await getWeatherText(areas);
+      await say(weatherText);
+    } else {
+      const result = await getClaude(message.text, userId);
+      
+      // If result has Slack blocks, send with blocks
+      if (result.slackBlocks) {
+        await say({ 
+          text: result.response, // Fallback text
+          blocks: result.slackBlocks 
+        });
+      } else {
+        await say(result.response);
+      }
+    }
   } catch (error) {
     logger.error("Error handling DM", error as Error);
     await say(`Error: ${error instanceof Error ? error.message : "Unknown error"}`);
@@ -287,6 +319,84 @@ app.command("/forecast", async ({ command, ack, respond }) => {
         error instanceof Error ? error.message : "Unknown error"
       }`
     );
+  }
+});
+
+// Slash command: /connect-calendar
+// Provides user with their personal Google Calendar authorization link
+import { getAuthorizationUrl, isUserAuthenticated } from "./src/auth/googleCalendar";
+
+app.command("/connect-calendar", async ({ command, ack, respond }) => {
+  await ack();
+
+  const userId = command.user_id;
+
+  try {
+    // Check if already authenticated
+    if (isUserAuthenticated(userId)) {
+      await respond({
+        text: "✅ Your Google Calendar is already connected! You can ask me about your meetings anytime.",
+        blocks: [
+          {
+            type: "section",
+            text: {
+              type: "mrkdwn",
+              text: "✅ *Your Google Calendar is already connected!*\n\nYou can ask me questions like:\n• Do I have any meetings today?\n• What's on my calendar this week?\n• Create a meeting tomorrow at 2pm",
+            },
+          },
+        ],
+        response_type: "ephemeral",
+      });
+      return;
+    }
+
+    // Generate authorization URL
+    const authUrl = getAuthorizationUrl(userId);
+    
+    await respond({
+      text: "Connect your Google Calendar to get started",
+      blocks: [
+        {
+          type: "section",
+          text: {
+            type: "mrkdwn",
+            text: "📅 *Connect Your Google Calendar*\n\nAuthorize calendar access to check your meetings and manage your schedule.",
+          },
+        },
+        {
+          type: "actions",
+          elements: [
+            {
+              type: "button",
+              text: {
+                type: "plain_text",
+                text: "🔗 Connect Calendar",
+                emoji: true,
+              },
+              url: authUrl,
+              style: "primary",
+              action_id: "connect_calendar_slash",
+            },
+          ],
+        },
+        {
+          type: "context",
+          elements: [
+            {
+              type: "mrkdwn",
+              text: "_After authorizing, you can ask me about your meetings anytime!_",
+            },
+          ],
+        },
+      ],
+      response_type: "ephemeral",
+    });
+  } catch (error) {
+    console.error("Error in /connect-calendar:", error);
+    await respond({
+      text: `Error: ${error instanceof Error ? error.message : "Could not generate authorization link"}`,
+      response_type: "ephemeral",
+    });
   }
 });
 
