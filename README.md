@@ -58,8 +58,8 @@ DB_USER=postgres
 DB_PASSWORD=your_db_password
 REDIS_HOST=localhost
 REDIS_PORT=6379
-AXEL_SLACK_ID=U01ABC123XYZ  # Manager's Slack user ID
-NADIA_SLACK_ID=U02DEF456GHI  # Manager's Slack user ID
+MANAGER1_SLACK_ID=U01ABC123XYZ  # Manager's Slack user ID
+MANAGER2_SLACK_ID=U02DEF456GHI  # Manager's Slack user ID
 
 # Optional: Other integrations
 WEATHER_API_KEY=your_openweather_api_key
