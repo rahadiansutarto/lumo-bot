@@ -37,7 +37,7 @@ export function initDatabase(): Pool {
 
   pool = new Pool(dbConfig);
 
-  pool.on('error', (err) => {
+  pool.on('error', (err: Error) => {
     logger.error('Unexpected database error', err);
   });
 
