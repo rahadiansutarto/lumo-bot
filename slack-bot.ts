@@ -4,6 +4,7 @@ import "dotenv/config";
 import { orchestrate } from "./src/orchestrator";
 import { getConfig, printConfig, CONFIG } from "./src/config";
 import { startOAuthServer } from "./src/oauth-server";
+import { initializeLeaveSystem, shutdownLeaveSystem } from './src/leave-system';
 
 // Validate environment before doing anything else
 console.log(" Validating environment variables...");
@@ -400,7 +401,7 @@ app.command("/connect-calendar", async ({ command, ack, respond }) => {
   }
 });
 
-// Handle Socket Mode connection errors gracefully
+// Handle uncaught errors
 process.on("uncaughtException", (error) => {
   const message = error instanceof Error ? error.message : String(error);
   
@@ -413,9 +414,14 @@ process.on("uncaughtException", (error) => {
     return;
   }
   
-  // For other errors, log and exit
+  // For other errors, log and gracefully shut down
   console.error("Fatal error:", message);
-  process.exit(1);
+  gracefulShutdown("UNCAUGHT_EXCEPTION");
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+  // Don't exit - log and continue for unhandled rejections
 });
 
 // Start bot
@@ -425,8 +431,37 @@ process.on("uncaughtException", (error) => {
     await app.start();
     console.log("Slack bot is running!");
     console.log("Ready to receive messages");
+    
+    // Initialize leave management system
+    console.log("\nInitializing leave management system...");
+    await initializeLeaveSystem(app);
+    console.log("Leave management system ready!");
+    
+    console.log("\nBot is fully operational!");
+    console.log("Available commands:");
+    console.log("  /request-leave - Submit a leave request");
+    console.log("  /leave-status - View pending requests (managers only)");
+    console.log("  /leave-audit - View audit log (managers only)");
   } catch (error) {
     console.error("Failed to start:", error);
     process.exit(1);
   }
 })();
+
+// Graceful shutdown handlers
+async function gracefulShutdown(signal: string) {
+  console.log(`\n${signal} received, shutting down gracefully...`);
+  
+  try {
+    await shutdownLeaveSystem();
+    await app.stop();
+    console.log("Shutdown complete");
+    process.exit(0);
+  } catch (error) {
+    console.error("Error during shutdown:", error);
+    process.exit(1);
+  }
+}
+
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));

@@ -17,6 +17,22 @@ interface EnvironmentConfig {
   // Attio CRM Configuration
   ATTIO_API_KEY: string;
   
+  // Database Configuration
+  DB_HOST?: string;
+  DB_PORT?: string;
+  DB_NAME?: string;
+  DB_USER?: string;
+  DB_PASSWORD?: string;
+  
+  // Redis Configuration
+  REDIS_HOST?: string;
+  REDIS_PORT?: string;
+  REDIS_PASSWORD?: string;
+  
+  // Manager Slack IDs
+  AXEL_SLACK_ID?: string;
+  NADIA_SLACK_ID?: string;
+  
   // Optional configurations
   WEATHER_API_KEY?: string;
   
