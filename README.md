@@ -12,6 +12,7 @@ An intelligent Slack bot powered by Claude AI (via Anthropic Foundry) with integ
 
 ### Integrated Tools
 - 📅 **Google Calendar** - Personal calendar access, meeting scheduling, availability checks
+- 🏖️ **Leave Management** - Submit, approve, and track time-off requests with automated reminders
 - 🔍 **Document Search** - Search company documentation
 - 👥 **Attio CRM** - Access customer data, deals, and contacts
 - 🌤️ **Weather** - Weather forecasts for any location
@@ -49,6 +50,17 @@ GOOGLE_CLIENT_SECRET=your_client_secret
 GOOGLE_REDIRECT_URI=http://localhost:3000/oauth/google/callback
 COMPANY_EMAIL_DOMAIN=yourcompany.com  # Restrict to company emails only
 
+# Optional: Leave Management System
+DB_HOST=localhost
+DB_PORT=5432
+DB_NAME=leave_management
+DB_USER=postgres
+DB_PASSWORD=your_db_password
+REDIS_HOST=localhost
+REDIS_PORT=6379
+AXEL_SLACK_ID=U01ABC123XYZ  # Manager's Slack user ID
+NADIA_SLACK_ID=U02DEF456GHI  # Manager's Slack user ID
+
 # Optional: Other integrations
 WEATHER_API_KEY=your_openweather_api_key
 ATTIO_API_KEY=your_attio_api_key
@@ -69,6 +81,11 @@ ATTIO_API_KEY=your_attio_api_key
 - `im:read` - View basic DM info
 - `im:write` - Send DMs
 - `commands` - Add slash commands
+- `users:read` - Read user profile information
+
+**For Leave Management:**
+- `chat:write.public` - Post messages to channels
+- `channels:read` - View basic channel info
 
 ### 3. Run the Bot
 
@@ -111,6 +128,35 @@ Bot: You need to connect your Google Calendar first. Click this link: [auth URL]
 
 See [QUICK_START_CALENDAR.md](./QUICK_START_CALENDAR.md) for setup instructions.
 
+### Leave Management System
+
+**Submit a Leave Request:**
+```
+/request-leave
+```
+Fill out the form with:
+- Leave type (Vacation, Sick, Personal, Emergency)
+- Start date and end date
+- Optional reason
+
+**For Managers:**
+```
+/leave-status    # View all pending requests
+/leave-audit     # View audit log of all actions
+```
+
+**Features:**
+- ✅ 3-day advance notice policy enforcement
+- ✅ Automatic approval requests sent to managers
+- ✅ 5-minute reminder notifications for pending requests
+- ✅ Daily out-of-office summaries posted to channels
+- ✅ Interactive approve/reject buttons for managers
+- ✅ Role-based access control (managers vs employees)
+- ✅ Request IDs in format: `LR-YYYYMMDD-XXX`
+- ✅ Complete audit trail of all actions
+
+See [LEAVE_MANAGEMENT_SETUP.md](./LEAVE_MANAGEMENT_SETUP.md) for full setup instructions.
+
 ### Other Tools
 
 **Weather:**
@@ -142,6 +188,7 @@ See [QUICK_START_CALENDAR.md](./QUICK_START_CALENDAR.md) for setup instructions.
 │   ├── config.ts                # Configuration management
 │   ├── logger.ts                # Logging utilities
 │   ├── oauth-server.ts          # OAuth callback handler
+│   ├── leave-system.ts          # Leave management initialization
 │   ├── auth/
 │   │   └── googleCalendar.ts    # Google OAuth management
 │   ├── tools/
@@ -149,12 +196,26 @@ See [QUICK_START_CALENDAR.md](./QUICK_START_CALENDAR.md) for setup instructions.
 │   │   ├── googleCalendar.ts    # Calendar tool
 │   │   ├── attio.ts             # Attio CRM tool
 │   │   └── searchDocs.ts        # Document search tool
+│   ├── slack/
+│   │   ├── leaveHandlers.ts     # Leave request Slack handlers
+│   │   └── leaveBlocks.ts       # Leave request UI components
+│   ├── db/
+│   │   └── postgres.ts          # PostgreSQL database client
+│   ├── jobs/
+│   │   └── reminderQueue.ts     # BullMQ job scheduling
+│   ├── utils/
+│   │   ├── leavePolicy.ts       # Leave policy validation
+│   │   └── retry.ts             # API retry logic
 │   ├── types/
 │   │   ├── googleCalendar.ts    # Calendar types
-│   │   └── attio.ts             # Attio types
+│   │   ├── attio.ts             # Attio types
+│   │   └── leave.ts             # Leave management types
 │   └── llm/
 │       └── claude.ts            # Claude API client
-└── GOOGLE_CALENDAR_SETUP.md     # Calendar setup guide
+├── database/
+│   └── schema.sql               # PostgreSQL schema
+└── scripts/
+    └── setup-database.ts        # Database setup script
 ```
 
 ## Tool Architecture
@@ -185,6 +246,13 @@ See [TOOL_CALLING_ARCHITECTURE.md](./TOOL_CALLING_ARCHITECTURE.md) for details.
 - **"Only yourcompany.com emails allowed"**: User must use company email, not personal
 - **OAuth callback not working**: Check OAuth server is running on correct port
 - See [GOOGLE_CALENDAR_SETUP.md](./GOOGLE_CALENDAR_SETUP.md) for detailed troubleshooting
+
+### Leave Management Issues
+- **Database connection errors**: Ensure PostgreSQL is running (`docker ps`)
+- **Redis connection errors**: Ensure Redis is running (`docker ps`)
+- **Reminders not working**: Check BullMQ worker is active (logs will show "Reminder system initialized")
+- **Manager not receiving notifications**: Verify `AXEL_SLACK_ID` and `NADIA_SLACK_ID` in `.env` are correct
+- See [LEAVE_MANAGEMENT_SETUP.md](./LEAVE_MANAGEMENT_SETUP.md) for detailed troubleshooting
 
 ### General Debugging
 Check logs for error details:
@@ -229,7 +297,10 @@ Examples of tools you could add:
 
 - [Quick Start: Google Calendar](./QUICK_START_CALENDAR.md) - 5-minute setup
 - [Google Calendar Setup](./GOOGLE_CALENDAR_SETUP.md) - Full documentation
+- [Leave Management Setup](./LEAVE_MANAGEMENT_SETUP.md) - Complete leave system setup guide
+- [Leave Management Overview](./LEAVE_MANAGEMENT.md) - Features and usage
 - [Tool Architecture](./TOOL_CALLING_ARCHITECTURE.md) - How the tool system works
+- [High Priority Improvements](./HIGH_PRIORITY_IMPROVEMENTS.md) - Architecture improvements implemented
 
 ## License
 
