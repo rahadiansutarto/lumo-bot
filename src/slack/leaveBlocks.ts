@@ -115,7 +115,7 @@ export function buildLeaveRequestModal() {
         },
         label: {
           type: 'plain_text',
-          text: 'Reason (Optional)',
+          text: 'Reason',
         },
         optional: true,
       },
@@ -264,7 +264,7 @@ export function buildManagerApprovalMessage(leaveRequest: LeaveRequest) {
             type: 'button',
             text: {
               type: 'plain_text',
-              text: 'Approve',
+              text: '✅ Approve',
               emoji: true,
             },
             style: 'primary',
@@ -275,7 +275,17 @@ export function buildManagerApprovalMessage(leaveRequest: LeaveRequest) {
             type: 'button',
             text: {
               type: 'plain_text',
-              text: 'Reject',
+              text: '💬 Approve with Comment',
+              emoji: true,
+            },
+            value: leaveRequest.request_id,
+            action_id: 'approve_with_comment',
+          },
+          {
+            type: 'button',
+            text: {
+              type: 'plain_text',
+              text: '❌ Reject',
               emoji: true,
             },
             style: 'danger',
@@ -283,6 +293,56 @@ export function buildManagerApprovalMessage(leaveRequest: LeaveRequest) {
             action_id: 'reject_leave',
           },
         ],
+      },
+    ],
+  };
+}
+
+/**
+ * Build approval comment modal
+ */
+export function buildApprovalCommentModal(requestId: string) {
+  return {
+    type: 'modal',
+    callback_id: 'approval_comment_modal',
+    private_metadata: requestId,
+    title: {
+      type: 'plain_text',
+      text: 'Approve Leave',
+    },
+    submit: {
+      type: 'plain_text',
+      text: 'Approve',
+    },
+    close: {
+      type: 'plain_text',
+      text: 'Cancel',
+    },
+    blocks: [
+      {
+        type: 'section',
+        text: {
+          type: 'mrkdwn',
+          text: `*Approving leave request: ${requestId}*\nAdd a comment or note:`,
+        },
+      },
+      {
+        type: 'input',
+        block_id: 'approval_comment_block',
+        element: {
+          type: 'plain_text_input',
+          action_id: 'approval_comment',
+          multiline: true,
+          placeholder: {
+            type: 'plain_text',
+            text: 'E.g., Approved. Please ensure handover is complete before leaving.',
+          },
+        },
+        label: {
+          type: 'plain_text',
+          text: 'Comment',
+        },
+        optional: true,
       },
     ],
   };
@@ -600,6 +660,16 @@ export function buildReminderMessage(leaveRequest: LeaveRequest, reminderCount: 
             },
             style: 'primary',
             action_id: 'approve_leave',
+            value: leaveRequest.request_id,
+          },
+          {
+            type: 'button',
+            text: {
+              type: 'plain_text',
+              text: '💬 Approve with Comment',
+              emoji: true,
+            },
+            action_id: 'approve_with_comment',
             value: leaveRequest.request_id,
           },
           {

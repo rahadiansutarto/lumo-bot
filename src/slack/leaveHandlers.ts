@@ -21,6 +21,7 @@ import {
   buildLeaveRequestModal,
   buildLeaveRequestConfirmation,
   buildManagerApprovalMessage,
+  buildApprovalCommentModal,
   buildRejectionModal,
   buildDecisionNotification,
   buildDailyOOOSummary,
@@ -44,10 +45,12 @@ export function setupLeaveHandlers(app: App): void {
   
   // Modal submissions
   app.view('leave_request_modal', handleLeaveRequestSubmission);
+  app.view('approval_comment_modal', handleApprovalCommentSubmission);
   app.view('rejection_reason_modal', handleRejectionSubmission);
   
   // Button actions
   app.action('approve_leave', handleApproveLeave);
+  app.action('approve_with_comment', handleApproveWithComment);
   app.action('reject_leave', handleRejectLeave);
 }
 
@@ -344,6 +347,106 @@ async function handleApproveLeave({ ack, body, client }: any) {
     log.info('Leave request approved successfully');
   } catch (error) {
     log.error('Error approving leave request', error as Error);
+    
+    await client.chat.postMessage({
+      channel: managerId,
+      text: `Sorry, there was an error approving request ${requestId}. Please try again.`,
+    });
+  }
+}
+
+/**
+ * Handle approve with comment button click
+ */
+async function handleApproveWithComment({ ack, body, client }: any) {
+  await ack();
+  
+  const action = body.actions[0] as BlockAction;
+  const requestId = (action as any).value as string;
+  
+  const log = logger.child({
+    action: 'approve_with_comment',
+    requestId,
+  });
+  
+  try {
+    log.info('Opening approval comment modal');
+    
+    await client.views.open({
+      trigger_id: body.trigger_id,
+      view: buildApprovalCommentModal(requestId),
+    });
+  } catch (error) {
+    log.error('Error opening approval comment modal', error as Error);
+  }
+}
+
+/**
+ * Handle approval comment modal submission
+ */
+async function handleApprovalCommentSubmission({ ack, body, view, client }: any) {
+  const managerId = body.user.id;
+  const requestId = view.private_metadata;
+  
+  const log = logger.child({
+    action: 'approval_comment_submission',
+    requestId,
+    managerId,
+  });
+  
+  await ack();
+  
+  try {
+    log.info('Processing leave approval with comment');
+    
+    // Get approval comment
+    const values = view.state.values;
+    const approvalComment = values.approval_comment_block?.approval_comment?.value || '';
+    
+    // Update request status
+    await updateLeaveRequestStatus({
+      request_id: requestId,
+      decision: 'approved',
+      approved_by: managerId,
+    });
+    
+    // Cancel future reminders
+    await cancelLeaveReminder(requestId);
+    
+    // Get updated request
+    const leaveRequest = await getLeaveRequest(requestId);
+    
+    if (!leaveRequest) {
+      throw new Error('Leave request not found after approval');
+    }
+    
+    // Send notification to employee (with comment if provided)
+    const notificationBlocks = buildDecisionNotification(leaveRequest, true);
+    
+    // Add comment section if comment was provided
+    if (approvalComment) {
+      notificationBlocks.blocks.push({
+        type: 'section',
+        text: {
+          type: 'mrkdwn',
+          text: `*Manager's Note:*\n${approvalComment}`,
+        },
+      });
+    }
+    
+    await client.chat.postMessage({
+      channel: leaveRequest.slack_user_id,
+      ...notificationBlocks,
+    });
+    
+    // Log audit with comment
+    await logAudit(managerId, 'approve', requestId, {
+      approval_comment: approvalComment || 'No comment',
+    });
+    
+    log.info('Leave request approved with comment successfully');
+  } catch (error) {
+    log.error('Error approving leave request with comment', error as Error);
     
     await client.chat.postMessage({
       channel: managerId,
