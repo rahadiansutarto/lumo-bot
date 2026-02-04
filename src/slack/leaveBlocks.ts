@@ -168,8 +168,8 @@ export function buildLeaveRequestConfirmation(leaveRequest: LeaveRequest) {
           },
           {
             type: 'mrkdwn',
-            text: `*Status:*\n:clock3: Pending Approval`,
-          },
+            text: `*Status:*\n*Submitted & Pending* :hourglass: \nYour manager has been notified. \nExpect a response within 48 hours.`,
+           },
         ],
       },
       ...(leaveRequest.reason
@@ -609,7 +609,7 @@ export function buildReminderMessage(leaveRequest: LeaveRequest, reminderCount: 
         type: 'section',
         text: {
           type: 'mrkdwn',
-          text: `This leave request has been pending for *${hoursPending} hours*. Please review and take action.`,
+          text: `Quick Reminder: ⏰ A leave request is waiting. You can fix it in ~10 seconds.`,
         },
       },
       {
