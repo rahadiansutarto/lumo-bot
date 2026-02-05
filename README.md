@@ -104,7 +104,7 @@ bun run dev
 
 **In Channels:**
 ```
-@bot Hello! How can you help me?
+@bot Hello! Can you help me...?
 ```
 
 **Direct Messages:**
