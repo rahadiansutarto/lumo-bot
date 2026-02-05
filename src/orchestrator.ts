@@ -1,6 +1,6 @@
 import { callClaude } from "./llm/claude";
 import { toolRegistry } from "./tools";
-import { TOOL_SYSTEM_PROMPT } from "./prompts";
+import { getToolSystemPrompt } from "./prompts";
 
 /**
  * Represents a tool call request from the model
@@ -67,9 +67,9 @@ export async function orchestrate(
   while (iterations < MAX_ITERATIONS) {
     iterations++;
 
-    // Call Claude with current conversation state
+    // Call Claude with current conversation state (with dynamic date/time)
     const modelResponse = await callClaude({
-      system: TOOL_SYSTEM_PROMPT,
+      system: getToolSystemPrompt(),
       messages: conversationHistory,
     });
 

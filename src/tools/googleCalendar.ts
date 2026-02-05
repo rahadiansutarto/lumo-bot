@@ -92,9 +92,14 @@ async function listEvents(
   const auth = await getAuthenticatedClient(userId);
   const calendar = google.calendar({ version: 'v3', auth });
 
+  // Default timeMin to start of today (midnight) instead of current time
+  // This ensures we see all events for the day, including ones that started earlier
+  let defaultTimeMin = new Date();
+  defaultTimeMin.setHours(0, 0, 0, 0);
+
   const response = await calendar.events.list({
     calendarId: 'primary',
-    timeMin: params.timeMin || new Date().toISOString(),
+    timeMin: params.timeMin || defaultTimeMin.toISOString(),
     timeMax: params.timeMax,
     maxResults: params.maxResults || 10,
     singleEvents: true,
@@ -227,7 +232,7 @@ async function updateEvent(
  */
 export const googleCalendar: Tool = {
   name: 'googleCalendar',
-  description: 'Access and manage your Google Calendar. List events, create meetings, check availability, and more. Each user accesses their own calendar.',
+  description: 'Access and manage your Google Calendar. List events, create meetings, check availability, and more. Each user accesses their own calendar. When listing events for "today", set timeMax to end of today to see all events for the day.',
   
   parameters: {
     action: {
@@ -237,12 +242,12 @@ export const googleCalendar: Tool = {
     },
     timeMin: {
       type: 'string',
-      description: 'Start time for listing events (ISO 8601 format, e.g., "2024-01-20T00:00:00Z"). Defaults to now.',
+      description: 'Start time for listing events (ISO 8601 format, e.g., "2024-01-20T00:00:00Z"). Defaults to start of today (midnight). For "today" queries, you can omit this.',
       required: false,
     },
     timeMax: {
       type: 'string',
-      description: 'End time for listing events (ISO 8601 format)',
+      description: 'End time for listing events (ISO 8601 format). For "today" queries, set this to end of today (23:59:59) to see all events for the day.',
       required: false,
     },
     maxResults: {

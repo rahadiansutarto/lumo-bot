@@ -9,7 +9,26 @@ import { getToolDescriptions } from "./tools";
  * 3. When to use tools vs. direct responses
  * 4. Important constraints and safety rules
  */
-export const TOOL_SYSTEM_PROMPT = `You are a helpful assistant with access to tools.
+/**
+ * Get the dynamic system prompt with current date/time
+ */
+export function getToolSystemPrompt(): string {
+  const now = new Date();
+  const currentDate = now.toLocaleDateString('en-US', {
+    weekday: 'long',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+  });
+  const currentTime = now.toLocaleTimeString('en-US', {
+    hour: '2-digit',
+    minute: '2-digit',
+    timeZone: 'UTC',
+  });
+
+  return `You are a helpful assistant with access to tools.
+
+CURRENT DATE AND TIME: ${currentDate} at ${currentTime} UTC
 
 IMPORTANT: You CANNOT execute tools yourself. You can only REQUEST that tools be executed by the system.
 
@@ -72,3 +91,7 @@ User: "Hello!"
 Assistant: Hello! How can I help you today?
 
 Remember: Tool requests must be isolated - no additional text in the same response.`;
+}
+
+// Legacy export for backwards compatibility
+export const TOOL_SYSTEM_PROMPT = getToolSystemPrompt();
