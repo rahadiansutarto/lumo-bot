@@ -258,7 +258,7 @@ async function handleLeaveRequestSubmission({ ack, body, view, client }: any) {
     
     // Schedule reminder in database
     const nextReminderAt = new Date();
-    nextReminderAt.setMinutes(nextReminderAt.getMinutes() + 5);
+    nextReminderAt.setHours(nextReminderAt.getHours() + 12);
     await dbScheduleReminder(leaveRequest.request_id, nextReminderAt);
     
     // Schedule reminder in BullMQ

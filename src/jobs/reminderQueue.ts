@@ -2,7 +2,7 @@
  * BullMQ queue system for leave request reminders
  * 
  * Handles:
- * - 5-minute reminders for pending requests (for testing)
+ * - 12-hour reminders for pending requests
  * - Daily OOO summaries
  * - Persistent scheduling (survives server restarts)
  */
@@ -140,10 +140,9 @@ async function processReminder(requestId: string, reminderCount: number): Promis
     logger.warn('Slack app not initialized, cannot send reminder', { requestId });
   }
   
-  // Schedule next reminder (5 minutes from now)
+  // Schedule next reminder (12 hours from now)
   const nextReminderAt = new Date();
-  nextReminderAt.setMinutes(nextReminderAt.getMinutes() + 5);
-  // nextReminderAt.setHours(nextReminderAt.getHours() + 12);
+  nextReminderAt.setHours(nextReminderAt.getHours() + 12);
   await updateReminder(requestId, nextReminderAt);
   
   // Add job for next reminder
@@ -154,8 +153,7 @@ async function processReminder(requestId: string, reminderCount: number): Promis
       reminderCount: reminderCount + 1,
     },
     {
-      delay: 5 * 60 * 1000, // 5 minutes in milliseconds
-      // delay: 12 * 60 * 60 * 1000, // 12 hours in milliseconds
+      delay: 12 * 60 * 60 * 1000, // 12 hours in milliseconds
     }
   );
 }
@@ -254,10 +252,8 @@ reminderQueueEvents.on('failed', ({ jobId, failedReason }) => {
  * Add a reminder job for a new leave request
  */
 export async function scheduleLeaveReminder(requestId: string): Promise<void> {
-  // First reminder in 5 minutes
-  const delay = 5 * 60 * 1000;
-    // First reminder in 12 hours
-    // const delay = 12 * 60 * 60 * 1000;
+  // First reminder in 12 hours
+  const delay = 12 * 60 * 60 * 1000;
   
   await reminderQueue.add(
     'send-reminder',
