@@ -168,7 +168,11 @@ export function buildLeaveRequestConfirmation(leaveRequest: LeaveRequest) {
           },
           {
             type: 'mrkdwn',
-            text: `*Status:*\n*Submitted & Pending* :hourglass: \nYour manager has been notified. \nExpect a response within 48 hours.`,
+            text: `*Date Submitted:*\n<!date^${Math.floor(leaveRequest.submitted_at.getTime() / 1000)}^{date_short_pretty} at {time}|${leaveRequest.submitted_at.toISOString()}>`,
+          },
+          {
+            type: 'mrkdwn',
+            text: `*Status:*\nSubmitted & Pending :hourglass: \nYour manager has been notified. \nExpect a response within 48 hours.`,
            },
         ],
       },
@@ -183,15 +187,6 @@ export function buildLeaveRequestConfirmation(leaveRequest: LeaveRequest) {
             },
           ]
         : []),
-      {
-        type: 'context',
-        elements: [
-          {
-            type: 'mrkdwn',
-            text: `Submitted <!date^${Math.floor(leaveRequest.submitted_at.getTime() / 1000)}^{date_short_pretty} at {time}|${leaveRequest.submitted_at.toISOString()}>`,
-          },
-        ],
-      },
     ],
   };
 }
