@@ -251,7 +251,7 @@ See [TOOL_CALLING_ARCHITECTURE.md](./TOOL_CALLING_ARCHITECTURE.md) for details.
 - **Database connection errors**: Ensure PostgreSQL is running (`docker ps`)
 - **Redis connection errors**: Ensure Redis is running (`docker ps`)
 - **Reminders not working**: Check BullMQ worker is active (logs will show "Reminder system initialized")
-- **Manager not receiving notifications**: Verify `AXEL_SLACK_ID` and `NADIA_SLACK_ID` in `.env` are correct
+- **Manager not receiving notifications**: Verify `MANAGER2_SLACK_ID` and `MANAGER2_SLACK_ID` in `.env` are correct
 - See [LEAVE_MANAGEMENT_SETUP.md](./LEAVE_MANAGEMENT_SETUP.md) for detailed troubleshooting
 
 ### General Debugging
