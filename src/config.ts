@@ -33,6 +33,22 @@ interface EnvironmentConfig {
   AXEL_SLACK_ID?: string;
   NADIA_SLACK_ID?: string;
   
+  // Leadership Slack IDs (for weekly check-ins reports)
+  GURNOOR_SLACK_ID?: string;
+  SANDEEP_SLACK_ID?: string;
+  EMEKA_SLACK_ID?: string;
+  
+  // Google Service Account (for Google Sheets API)
+  GOOGLE_SERVICE_ACCOUNT_KEY?: string;
+  
+  // Weekly Check-Ins Configuration
+  WEEKLY_CHECKINS_SPREADSHEET_ID?: string;
+  WEEKLY_CHECKINS_ROSTER_TAB?: string;
+  WEEKLY_CHECKINS_WORKER_TAB?: string;
+  WEEKLY_CHECKINS_MANAGER_TAB?: string;
+  WORKER_CHECKIN_FORM_URL?: string;
+  MANAGER_REVIEW_FORM_URL?: string;
+  
   // Optional configurations
   WEATHER_API_KEY?: string;
   

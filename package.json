@@ -7,6 +7,7 @@
     "start": "bun run slack-bot.ts",
     "dev": "bun --watch slack-bot.ts",
     "setup-db": "bun run scripts/setup-database.ts",
+    "setup-weekly-checkins": "bun run scripts/setup-weekly-checkins-db.ts",
     "test:attio": "bun run test-attio-tool.ts",
     "test:leave": "echo 'Leave system tests coming soon'"
   },

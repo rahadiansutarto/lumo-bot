@@ -5,6 +5,7 @@ import { orchestrate } from "./src/orchestrator";
 import { getConfig, printConfig, CONFIG } from "./src/config";
 import { startOAuthServer } from "./src/oauth-server";
 import { initializeLeaveSystem, shutdownLeaveSystem } from './src/leave-system';
+import { initializeWeeklyCheckInsSystem, shutdownWeeklyCheckInsSystem } from './src/weekly-checkins-system';
 
 // Validate environment before doing anything else
 console.log(" Validating environment variables...");
@@ -437,6 +438,16 @@ process.on('unhandledRejection', (reason, promise) => {
     await initializeLeaveSystem(app);
     console.log("Leave management system ready!");
     
+    // Initialize weekly check-ins system
+    console.log("\nInitializing weekly check-ins system...");
+    try {
+      await initializeWeeklyCheckInsSystem(app);
+      console.log("Weekly check-ins system ready!");
+    } catch (error) {
+      console.warn("Weekly check-ins system not initialized:", error instanceof Error ? error.message : String(error));
+      console.warn("This is optional - bot will continue without weekly check-ins.");
+    }
+    
     console.log("\nBot is fully operational!");
     console.log("Available commands:");
     console.log("  /request-leave - Submit a leave request");
@@ -454,6 +465,7 @@ async function gracefulShutdown(signal: string) {
   
   try {
     await shutdownLeaveSystem();
+    await shutdownWeeklyCheckInsSystem();
     await app.stop();
     console.log("Shutdown complete");
     process.exit(0);
