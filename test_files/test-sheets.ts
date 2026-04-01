@@ -1,4 +1,4 @@
-import { readRosterFromSheets, getSheetsConfigFromEnv } from './src/services/googleSheets';
+import { readRosterFromSheets, getSheetsConfigFromEnv } from '../src/services/googleSheets';
 import 'dotenv/config';
 
 async function test() {

@@ -12,7 +12,7 @@
     "resolveJsonModule": true,
     "allowSyntheticDefaultImports": true
   },
-  "include": ["*.ts", "src/**/*.ts"],
+  "include": ["*.ts", "src/**/*.ts", "test_files/test-worker-reminder.ts", "test_files/test-sheets.ts", "test_files/test-manager-reminder.ts", "test_files/test-deals.ts", "test_files/test-deals-raw.ts", "test_files/test-db-connection.ts", "test_files/test-calendar.ts", "test_files/test-compliance-report.ts", "test_files/test-attio.ts", "test_files/test-attio-tool.ts", "test_files/test-attio-simple.ts", "test_files/run-test-sequence.ts", "test_files/slack-bot-leave-integration-example.ts"],
   "exclude": ["node_modules"]
 }
 

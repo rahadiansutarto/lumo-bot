@@ -5,7 +5,7 @@
  */
 
 import { App } from '@slack/bolt';
-import { buildManagerReminderMessage } from './src/slack/checkinBlocks';
+import { buildManagerReminderMessage } from '../src/slack/checkinBlocks';
 import 'dotenv/config';
 
 async function test() {

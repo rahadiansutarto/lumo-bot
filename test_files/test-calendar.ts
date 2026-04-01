@@ -6,8 +6,8 @@
  * Note: This is a mock test. In production, users authenticate via OAuth flow.
  */
 
-import { googleCalendar } from "./src/tools/googleCalendar";
-import { getAuthorizationUrl } from "./src/auth/googleCalendar";
+import { googleCalendar } from "../src/tools/googleCalendar";
+import { getAuthorizationUrl } from "../src/auth/googleCalendar";
 
 const MOCK_USER_ID = "U123456789"; // Example Slack user ID
 

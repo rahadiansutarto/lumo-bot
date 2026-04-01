@@ -1,5 +1,5 @@
 import "dotenv/config";
-import { attio } from "./src/tools/attio";
+import { attio } from "../src/tools/attio";
 
 /**
  * Test the Attio tool directly (without LLM)

@@ -5,9 +5,9 @@
  */
 
 import { App } from '@slack/bolt';
-import { buildComplianceReportMessage } from './src/slack/checkinBlocks';
-import { generateComplianceReport, getCurrentWeekId } from './src/db/weeklyCheckins';
-import { initDatabase } from './src/db/postgres';
+import { buildComplianceReportMessage } from '../src/slack/checkinBlocks';
+import { generateComplianceReport, getCurrentWeekId } from '../src/db/weeklyCheckins';
+import { initDatabase } from '../src/db/postgres';
 import 'dotenv/config';
 
 async function test() {

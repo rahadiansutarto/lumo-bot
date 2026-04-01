@@ -6,9 +6,9 @@
 
 import { App } from "@slack/bolt";
 import "dotenv/config";
-import { getConfig, printConfig } from "./src/config";
-import { createLogger } from "./src/logger";
-import { orchestrate } from "./src/orchestrator";
+import { getConfig, printConfig } from "../src/config";
+import { createLogger } from "../src/logger";
+import { orchestrate } from "../src/orchestrator";
 
 // ==========================================
 // ADD THIS: Import leave system
@@ -17,7 +17,7 @@ import {
   initializeLeaveSystem, 
   shutdownLeaveSystem,
   healthCheck 
-} from "./src/leave-system";
+} from "../src/leave-system";
 
 // Validate environment
 const config = getConfig();

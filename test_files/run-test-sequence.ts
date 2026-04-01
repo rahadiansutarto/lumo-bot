@@ -7,8 +7,8 @@
  */
 
 import { App } from '@slack/bolt';
-import { initDatabase } from './src/db/postgres';
-import { setCheckinSlackApp } from './src/jobs/checkinQueue';
+import { initDatabase } from '../src/db/postgres';
+import { setCheckinSlackApp } from '../src/jobs/checkinQueue';
 import { 
   buildWorkerReminderMessage, 
   buildWorkerNudgeMessage,
@@ -17,7 +17,7 @@ import {
   buildWorkerConfirmationMessage,
   buildManagerConfirmationMessage,
   buildWorkerFeedbackMessage,
-} from './src/slack/checkinBlocks';
+} from '../src/slack/checkinBlocks';
 import 'dotenv/config';
 
 async function runTestSequence() {
