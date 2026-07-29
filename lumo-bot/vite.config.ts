@@ -8,5 +8,11 @@ export default defineConfig({
   server: {
     port: 5173,
     strictPort: true,
+    proxy: {
+      '/api': {
+        target: process.env.LUMO_API_URL ?? 'http://localhost:8787',
+        changeOrigin: true,
+      },
+    },
   },
 })

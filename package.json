@@ -6,6 +6,7 @@
   "scripts": {
     "start": "bun run slack-bot.ts",
     "dev": "bun --watch slack-bot.ts",
+    "dev:dashboard-api": "bun --watch src/dashboard-api.ts",
     "setup-db": "bun run scripts/setup-database.ts",
     "setup-weekly-checkins": "bun run scripts/setup-weekly-checkins-db.ts",
     "test:attio": "bun run test-attio-tool.ts",

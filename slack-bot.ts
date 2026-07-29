@@ -5,6 +5,7 @@ import { getConfig, printConfig } from "./src/config";
 import { startOAuthServer } from "./src/oauth-server";
 import { initializeLeaveSystem, shutdownLeaveSystem } from './src/leave-system';
 import { initializeWeeklyCheckInsSystem, shutdownWeeklyCheckInsSystem } from './src/weekly-checkins-system';
+import { startDashboardApi } from "./src/dashboard-api";
 
 // Validate environment before doing anything else
 console.log(" Validating environment variables...");
@@ -24,6 +25,7 @@ const app = new App({
   socketMode: true,
   appToken: config.SLACK_APP_TOKEN,
 });
+let dashboardApiServer: ReturnType<typeof startDashboardApi> | null = null;
 
 console.log(`Initializing Slack Bot with ${config.LLM_PROVIDER} LLM provider...`);
 
@@ -429,6 +431,13 @@ process.on('unhandledRejection', (reason, promise) => {
     await app.start();
     console.log("Slack bot is running!");
     console.log("Ready to receive messages");
+
+    try {
+      dashboardApiServer = startDashboardApi();
+    } catch (error) {
+      console.warn("Dashboard API not started:", error instanceof Error ? error.message : String(error));
+      console.warn("The Slack bot will continue running without the frontend API.");
+    }
     
     // Initialize leave management system
     console.log("\nInitializing leave management system...");
@@ -463,6 +472,7 @@ async function gracefulShutdown(signal: string) {
   try {
     await shutdownLeaveSystem();
     await shutdownWeeklyCheckInsSystem();
+    dashboardApiServer?.stop();
     await app.stop();
     console.log("Shutdown complete");
     process.exit(0);
