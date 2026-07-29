@@ -1,8 +1,7 @@
 import { App } from "@slack/bolt";
-import AnthropicFoundry from "@anthropic-ai/foundry-sdk";
 import "dotenv/config";
 import { orchestrate } from "./src/orchestrator";
-import { getConfig, printConfig, CONFIG } from "./src/config";
+import { getConfig, printConfig } from "./src/config";
 import { startOAuthServer } from "./src/oauth-server";
 import { initializeLeaveSystem, shutdownLeaveSystem } from './src/leave-system';
 import { initializeWeeklyCheckInsSystem, shutdownWeeklyCheckInsSystem } from './src/weekly-checkins-system';
@@ -19,12 +18,6 @@ printConfig();
 console.log("\nStarting OAuth server...");
 startOAuthServer();
 
-// Initialize Anthropic Foundry client
-const claude = new AnthropicFoundry({
-  apiKey: config.ANTHROPIC_API_KEY,
-  resource: config.ANTHROPIC_RESOURCE,
-});
-
 // Initialize Slack app
 const app = new App({
   token: config.SLACK_BOT_TOKEN,
@@ -32,12 +25,11 @@ const app = new App({
   appToken: config.SLACK_APP_TOKEN,
 });
 
-console.log("Initializing Slack Bot with Anthropic Foundry SDK...");
-console.log(`   Resource: ${config.ANTHROPIC_RESOURCE}`);
+console.log(`Initializing Slack Bot with ${config.LLM_PROVIDER} LLM provider...`);
 
 import { createLogger } from "./src/logger";
 
-// Get Claude response with tool calling (via orchestrator)
+// Get LLM response with tool calling (via orchestrator)
 async function getClaude(message: string, userId?: string, channelId?: string) {
   const logger = createLogger(undefined, { userId, channelId });
   
@@ -231,11 +223,16 @@ app.event("app_mention", async ({ event, say }) => {
       return;
     }
 
+    const threadBroadcast = {
+      thread_ts: event.thread_ts || event.ts,
+      reply_broadcast: true,
+    };
+
     const areas = extractWeatherAreas(rawText);
     
     if (areas.length > 0) {
       const weatherText = await getWeatherText(areas);
-      await say({ text: weatherText, thread_ts: event.thread_ts || event.ts });
+      await say({ text: weatherText, ...threadBroadcast });
     } else {
       const result = await getClaude(rawText, event.user, event.channel);
       
@@ -244,10 +241,10 @@ app.event("app_mention", async ({ event, say }) => {
         await say({ 
           text: result.response, // Fallback text
           blocks: result.slackBlocks,
-          thread_ts: event.thread_ts || event.ts 
+          ...threadBroadcast,
         });
       } else {
-        await say({ text: result.response, thread_ts: event.thread_ts || event.ts });
+        await say({ text: result.response, ...threadBroadcast });
       }
     }
   } catch (error) {

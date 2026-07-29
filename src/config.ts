@@ -10,9 +10,14 @@ interface EnvironmentConfig {
   SLACK_BOT_TOKEN: string;
   SLACK_APP_TOKEN: string;
   
-  // Anthropic/Claude Configuration
-  ANTHROPIC_API_KEY: string;
-  ANTHROPIC_RESOURCE: string;
+  // LLM Configuration
+  LLM_PROVIDER: "openai" | "anthropic";
+  OPENAI_API_KEY?: string;
+  OPENAI_MODEL?: string;
+  OPENAI_MODEL_CANDIDATES?: string;
+  ANTHROPIC_API_KEY?: string;
+  ANTHROPIC_RESOURCE?: string;
+  ANTHROPIC_MODEL?: string;
   
   // Attio CRM Configuration
   ATTIO_API_KEY: string;
@@ -65,9 +70,10 @@ export const CONFIG = {
   ATTIO_MAX_RETRIES: 3,
   ATTIO_RETRY_DELAY_MS: 1000,
   
-  // Claude settings
-  CLAUDE_MAX_TOKENS: 1024,
-  CLAUDE_MODEL: "claude-sonnet-4-5",
+  // LLM settings
+  LLM_MAX_TOKENS: 1024,
+  OPENAI_MODEL_CANDIDATES: ["gpt-5.5", "gpt-5.4-mini", "gpt-5.5-pro", "gpt-4.1-mini"],
+  ANTHROPIC_MODEL: "claude-sonnet-4-5",
   
   // Orchestrator settings
   MAX_TOOL_ITERATIONS: 10,
@@ -84,11 +90,9 @@ export const CONFIG = {
  * Throws an error with clear message if any are missing
  */
 export function validateEnvironment(): EnvironmentConfig {
-  const required: (keyof EnvironmentConfig)[] = [
+  const required: Array<"SLACK_BOT_TOKEN" | "SLACK_APP_TOKEN" | "ATTIO_API_KEY"> = [
     "SLACK_BOT_TOKEN",
     "SLACK_APP_TOKEN",
-    "ANTHROPIC_API_KEY",
-    "ANTHROPIC_RESOURCE",
     "ATTIO_API_KEY",
   ];
   
@@ -102,6 +106,33 @@ export function validateEnvironment(): EnvironmentConfig {
       missing.push(key);
     } else {
       config[key] = value;
+    }
+  }
+
+  const llmProvider = resolveLLMProvider(process.env.LLM_PROVIDER);
+  config.LLM_PROVIDER = llmProvider;
+
+  if (llmProvider === "openai") {
+    config.OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+    config.OPENAI_MODEL = normalizeOptional(process.env.OPENAI_MODEL);
+    config.OPENAI_MODEL_CANDIDATES =
+      normalizeOptional(process.env.OPENAI_MODEL_CANDIDATES) ||
+      CONFIG.OPENAI_MODEL_CANDIDATES.join(",");
+
+    if (!config.OPENAI_API_KEY || config.OPENAI_API_KEY.trim() === "") {
+      missing.push("OPENAI_API_KEY");
+    }
+  } else {
+    config.ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
+    config.ANTHROPIC_RESOURCE = process.env.ANTHROPIC_RESOURCE;
+    config.ANTHROPIC_MODEL = process.env.ANTHROPIC_MODEL || CONFIG.ANTHROPIC_MODEL;
+
+    if (!config.ANTHROPIC_API_KEY || config.ANTHROPIC_API_KEY.trim() === "") {
+      missing.push("ANTHROPIC_API_KEY");
+    }
+
+    if (!config.ANTHROPIC_RESOURCE || config.ANTHROPIC_RESOURCE.trim() === "") {
+      missing.push("ANTHROPIC_RESOURCE");
     }
   }
   
@@ -126,9 +157,28 @@ export function validateEnvironment(): EnvironmentConfig {
   // Validate API key formats (basic check)
   validateApiKeyFormat("ATTIO_API_KEY", config.ATTIO_API_KEY!);
   validateApiKeyFormat("SLACK_BOT_TOKEN", config.SLACK_BOT_TOKEN!);
-  validateApiKeyFormat("ANTHROPIC_API_KEY", config.ANTHROPIC_API_KEY!);
+  if (config.LLM_PROVIDER === "openai") {
+    validateApiKeyFormat("OPENAI_API_KEY", config.OPENAI_API_KEY!);
+  } else {
+    validateApiKeyFormat("ANTHROPIC_API_KEY", config.ANTHROPIC_API_KEY!);
+  }
   
   return config as EnvironmentConfig;
+}
+
+function resolveLLMProvider(value: string | undefined): "openai" | "anthropic" {
+  const provider = (value || (process.env.OPENAI_API_KEY ? "openai" : "anthropic")).toLowerCase();
+
+  if (provider === "openai" || provider === "anthropic") {
+    return provider;
+  }
+
+  throw new Error(`Unsupported LLM_PROVIDER "${value}". Use "openai" or "anthropic".`);
+}
+
+function normalizeOptional(value: string | undefined): string | undefined {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : undefined;
 }
 
 /**
@@ -172,8 +222,15 @@ export function printConfig(): void {
   
   console.log(" Configuration:");
   console.log(`   Environment: ${config.NODE_ENV}`);
-  console.log(`   Claude Model: ${CONFIG.CLAUDE_MODEL}`);
-  console.log(`   Max Tokens: ${CONFIG.CLAUDE_MAX_TOKENS}`);
+  console.log(`   LLM Provider: ${config.LLM_PROVIDER}`);
+  console.log(
+    `   LLM Model: ${
+      config.LLM_PROVIDER === "openai"
+        ? config.OPENAI_MODEL || `auto (${config.OPENAI_MODEL_CANDIDATES})`
+        : config.ANTHROPIC_MODEL
+    }`
+  );
+  console.log(`   Max Tokens: ${CONFIG.LLM_MAX_TOKENS}`);
   console.log(`   Max Tool Iterations: ${CONFIG.MAX_TOOL_ITERATIONS}`);
   console.log(`   Attio Query Limit: ${CONFIG.ATTIO_QUERY_LIMIT}`);
   console.log(`   Log Level: ${CONFIG.LOG_LEVEL}`);
@@ -181,7 +238,11 @@ export function printConfig(): void {
   // Show masked API keys
   console.log("\n API Keys:");
   console.log(`   Slack: ${maskApiKey(config.SLACK_BOT_TOKEN)}`);
-  console.log(`   Anthropic: ${maskApiKey(config.ANTHROPIC_API_KEY)}`);
+  if (config.LLM_PROVIDER === "openai") {
+    console.log(`   OpenAI: ${maskApiKey(config.OPENAI_API_KEY!)}`);
+  } else {
+    console.log(`   Anthropic: ${maskApiKey(config.ANTHROPIC_API_KEY!)}`);
+  }
   console.log(`   Attio: ${maskApiKey(config.ATTIO_API_KEY)}`);
   
   if (config.WEATHER_API_KEY) {

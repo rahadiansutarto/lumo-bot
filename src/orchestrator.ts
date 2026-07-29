@@ -1,4 +1,4 @@
-import { callClaude } from "./llm/claude";
+import { callLLM } from "./llm/claude";
 import { toolRegistry } from "./tools";
 import { getToolSystemPrompt } from "./prompts";
 
@@ -44,9 +44,9 @@ const MAX_ITERATIONS = 10;
  * Main orchestrator that handles tool calling loop
  * 
  * Flow:
- * 1. Send user message to Claude with tool system prompt
- * 2. Parse Claude's response for tool requests
- * 3. If tool requested: execute it, send result back to Claude
+ * 1. Send user message to the configured LLM with tool system prompt
+ * 2. Parse the model's response for tool requests
+ * 3. If tool requested: execute it, send result back to the model
  * 4. If normal response: return to user
  * 5. Repeat until final answer or max iterations
  */
@@ -67,8 +67,8 @@ export async function orchestrate(
   while (iterations < MAX_ITERATIONS) {
     iterations++;
 
-    // Call Claude with current conversation state (with dynamic date/time)
-    const modelResponse = await callClaude({
+    // Call the configured LLM with current conversation state (with dynamic date/time)
+    const modelResponse = await callLLM({
       system: getToolSystemPrompt(),
       messages: conversationHistory,
     });
