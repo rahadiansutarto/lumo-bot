@@ -2,6 +2,7 @@ import { orchestrate } from './orchestrator';
 import { toolRegistry } from './tools';
 
 type HealthState = 'online' | 'degraded' | 'offline';
+type AttentionLevel = 'critical' | 'watch' | 'ok' | 'idle';
 
 interface SystemStatus {
   name: string;
@@ -10,43 +11,90 @@ interface SystemStatus {
   latencyMs?: number;
 }
 
-interface DashboardSnapshot {
+interface DesktopAction {
+  id: string;
+  label: string;
+  prompt: string;
+  intent: string;
+  disabled?: boolean;
+}
+
+interface AssistantPanel {
+  mode: string;
+  state: HealthState;
+  headline: string;
+  detail: string;
+  lastSync: string;
+}
+
+interface LeavePanel {
+  pendingCount: number;
+  oooTodayCount: number;
+  remindersDue: number;
+  pending: Array<{
+    requestId: string;
+    requesterName: string;
+    leaveType: string;
+    dateRange: string;
+    totalDays: number;
+    hoursPending: number;
+    reminderCount: number;
+  }>;
+  oooToday: Array<{
+    requestId: string;
+    requesterName: string;
+    leaveType: string;
+    dateRange: string;
+  }>;
+  audit: Array<{
+    action: string;
+    actor: string;
+    requestId?: string;
+    at: string;
+  }>;
+}
+
+interface CheckinPanel {
+  weekId: string;
+  pendingWorkers: number;
+  pendingManagers: number;
+  workersTotal: number;
+  managersTotal: number;
+  workersDone: number;
+  managersDone: number;
+  repeatDefaulters: Array<{
+    name: string;
+    type: string;
+    missedCount: number;
+  }>;
+  pendingWorkerNames: string[];
+  pendingManagerIds: string[];
+}
+
+interface ToolPanel {
+  registered: string[];
+  configured: Array<{
+    name: string;
+    ready: boolean;
+    detail: string;
+  }>;
+}
+
+interface DesktopSnapshot {
   source: 'live';
   generatedAt: string;
   readiness: number;
+  assistant: AssistantPanel;
   systems: SystemStatus[];
-  workflows: Array<{
-    id: string;
-    name: string;
-    owner: string;
-    status: 'running' | 'attention' | 'idle';
-    progress: number;
-    detail: string;
-    signal: string;
-  }>;
-  queue: Array<{
-    id: string;
-    type: string;
-    title: string;
-    detail: string;
-    urgency: 'high' | 'medium' | 'low';
-    eta: string;
-  }>;
-  briefs: Array<{
-    title: string;
-    body: string;
-    tone: 'calm' | 'sharp' | 'warm';
-  }>;
-  metrics: Array<{
-    label: string;
-    value: string;
-    delta: string;
-  }>;
-  commandSuggestions: string[];
-  trace: Array<{
+  leave: LeavePanel;
+  checkins: CheckinPanel;
+  tools: ToolPanel;
+  actions: DesktopAction[];
+  timeline: Array<{
     at: string;
-    label: string;
+    title: string;
     detail: string;
+    level: AttentionLevel;
   }>;
 }
 
@@ -63,6 +111,41 @@ function jsonResponse(body: unknown, status = 200) {
     status,
     headers: corsHeaders,
   });
+}
+
+function nowTime() {
+  return new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
+
+function formatDate(value: unknown) {
+  if (!value) {
+    return 'unknown';
+  }
+
+  return new Date(String(value)).toLocaleDateString([], {
+    month: 'short',
+    day: 'numeric',
+  });
+}
+
+function formatDateRange(start: unknown, end: unknown) {
+  return `${formatDate(start)} - ${formatDate(end)}`;
+}
+
+function getCurrentWeekId(): string {
+  const now = new Date();
+  const target = new Date(now.valueOf());
+  const dayNumber = (now.getDay() + 6) % 7;
+  target.setDate(target.getDate() - dayNumber + 3);
+  const firstThursday = target.valueOf();
+  target.setMonth(0, 1);
+
+  if (target.getDay() !== 4) {
+    target.setMonth(0, 1 + ((4 - target.getDay() + 7) % 7));
+  }
+
+  const week = 1 + Math.ceil((firstThursday - target.valueOf()) / 604800000);
+  return `${now.getFullYear()}-W${week.toString().padStart(2, '0')}`;
 }
 
 async function timed<T>(task: () => Promise<T>): Promise<{ data?: T; latencyMs: number; error?: string }> {
@@ -82,28 +165,120 @@ async function timed<T>(task: () => Promise<T>): Promise<{ data?: T; latencyMs: 
   }
 }
 
-async function checkPostgres(): Promise<string> {
-  const hasDatabaseConfig =
-    Boolean(process.env.DATABASE_URL) || Boolean(process.env.DB_HOST && process.env.DB_NAME);
-
-  if (!hasDatabaseConfig) {
-    return 'missing config';
-  }
-
+async function createPool() {
   const { Pool } = await import('pg');
-  const pool = new Pool({
-    connectionString: process.env.DATABASE_URL,
-    host: process.env.DB_HOST,
-    port: process.env.DB_PORT ? Number(process.env.DB_PORT) : undefined,
-    database: process.env.DB_NAME,
-    user: process.env.DB_USER,
+
+  return new Pool({
+    host: process.env.DB_HOST || 'localhost',
+    port: Number(process.env.DB_PORT || '5432'),
+    database: process.env.DB_NAME || 'leave_management',
+    user: process.env.DB_USER || 'postgres',
     password: process.env.DB_PASSWORD,
-    connectionTimeoutMillis: 1200,
+    max: 4,
+    idleTimeoutMillis: 1000,
+    connectionTimeoutMillis: 1400,
   });
+}
+
+async function readDatabaseSnapshot() {
+  const weekId = getCurrentWeekId();
+  const pool = await createPool();
 
   try {
-    await pool.query('SELECT 1');
-    return 'connected';
+    const [
+      pendingRequestsResult,
+      oooTodayResult,
+      auditResult,
+      remindersResult,
+      pendingWorkersResult,
+      pendingManagersResult,
+      complianceResult,
+      repeatDefaultersResult,
+    ] = await Promise.all([
+      pool.query('SELECT * FROM pending_requests_summary ORDER BY hours_pending DESC LIMIT 5'),
+      pool.query('SELECT * FROM approved_leaves_today ORDER BY requester_name LIMIT 5'),
+      pool.query('SELECT * FROM audit_log ORDER BY created_at DESC LIMIT 6'),
+      pool.query('SELECT COUNT(*)::int AS count FROM reminder_schedule WHERE is_active = TRUE AND next_reminder_at <= CURRENT_TIMESTAMP'),
+      pool.query(
+        `SELECT employee_name FROM weekly_checkin_tracking
+         WHERE week_id = $1 AND worker_submitted = FALSE
+         ORDER BY employee_name LIMIT 8`,
+        [weekId],
+      ),
+      pool.query(
+        `SELECT DISTINCT manager_slack_id FROM weekly_checkin_tracking
+         WHERE week_id = $1 AND manager_review_submitted = FALSE
+         ORDER BY manager_slack_id LIMIT 8`,
+        [weekId],
+      ),
+      pool.query('SELECT * FROM weekly_compliance_summary WHERE week_id = $1', [weekId]),
+      pool.query(
+        `SELECT employee_name, employee_slack_id,
+          COUNT(*) FILTER (WHERE worker_status = 'missed')::int AS worker_missed_count,
+          COUNT(*) FILTER (WHERE manager_status = 'missed')::int AS manager_missed_count
+         FROM weekly_checkin_tracking
+         WHERE week_id >= TO_CHAR(CURRENT_DATE - INTERVAL '3 weeks', 'IYYY-"W"IW')
+           AND week_id <= $1
+         GROUP BY employee_name, employee_slack_id
+         HAVING COUNT(*) FILTER (WHERE worker_status = 'missed') >= 2
+             OR COUNT(*) FILTER (WHERE manager_status = 'missed') >= 2
+         ORDER BY worker_missed_count DESC, manager_missed_count DESC
+         LIMIT 4`,
+        [weekId],
+      ),
+    ]);
+
+    const compliance = complianceResult.rows[0] ?? {};
+
+    return {
+      leave: {
+        pendingCount: pendingRequestsResult.rowCount ?? 0,
+        oooTodayCount: oooTodayResult.rowCount ?? 0,
+        remindersDue: remindersResult.rows[0]?.count ?? 0,
+        pending: pendingRequestsResult.rows.map((row) => ({
+          requestId: row.request_id,
+          requesterName: row.requester_name,
+          leaveType: row.leave_type,
+          dateRange: formatDateRange(row.start_date, row.end_date),
+          totalDays: Number(row.total_days ?? 0),
+          hoursPending: Number(row.hours_pending ?? 0),
+          reminderCount: Number(row.reminder_count ?? 0),
+        })),
+        oooToday: oooTodayResult.rows.map((row) => ({
+          requestId: row.request_id,
+          requesterName: row.requester_name,
+          leaveType: row.leave_type,
+          dateRange: formatDateRange(row.start_date, row.end_date),
+        })),
+        audit: auditResult.rows.map((row) => ({
+          action: row.action,
+          actor: row.slack_user_id,
+          requestId: row.request_id,
+          at: new Date(row.created_at).toLocaleString(),
+        })),
+      },
+      checkins: {
+        weekId,
+        pendingWorkers: pendingWorkersResult.rowCount ?? 0,
+        pendingManagers: pendingManagersResult.rowCount ?? 0,
+        workersTotal: Number(compliance.total_employees ?? 0),
+        managersTotal: Number(compliance.total_managers ?? 0),
+        workersDone: Number(compliance.workers_on_time ?? 0),
+        managersDone: Number(compliance.managers_on_time ?? 0),
+        repeatDefaulters: repeatDefaultersResult.rows.map((row) => {
+          const workerMisses = Number(row.worker_missed_count ?? 0);
+          const managerMisses = Number(row.manager_missed_count ?? 0);
+
+          return {
+            name: row.employee_name,
+            type: workerMisses >= managerMisses ? 'worker' : 'manager',
+            missedCount: Math.max(workerMisses, managerMisses),
+          };
+        }),
+        pendingWorkerNames: pendingWorkersResult.rows.map((row) => row.employee_name),
+        pendingManagerIds: pendingManagersResult.rows.map((row) => row.manager_slack_id),
+      },
+    };
   } finally {
     await pool.end();
   }
@@ -130,180 +305,180 @@ async function checkRedis(): Promise<string> {
   }
 }
 
-async function buildDashboard(): Promise<DashboardSnapshot> {
-  const [databaseHealth, redisHealth] = await Promise.all([
-    timed(checkPostgres),
+function buildToolsPanel(): ToolPanel {
+  return {
+    registered: Array.from(toolRegistry.keys()),
+    configured: [
+      {
+        name: 'Slack',
+        ready: Boolean(process.env.SLACK_BOT_TOKEN && process.env.SLACK_APP_TOKEN),
+        detail: 'Socket mode runtime',
+      },
+      {
+        name: 'LLM',
+        ready: Boolean(process.env.OPENAI_API_KEY || process.env.ANTHROPIC_API_KEY),
+        detail: process.env.LLM_PROVIDER || 'provider auto-detected',
+      },
+      {
+        name: 'Attio',
+        ready: Boolean(process.env.ATTIO_API_KEY),
+        detail: 'CRM memory',
+      },
+      {
+        name: 'Google Sheets',
+        ready: Boolean(process.env.GOOGLE_SERVICE_ACCOUNT_KEY && process.env.WEEKLY_CHECKINS_SPREADSHEET_ID),
+        detail: 'check-in roster and forms',
+      },
+      {
+        name: 'Google Calendar',
+        ready: Boolean(process.env.GOOGLE_CLIENT_ID || process.env.GOOGLE_CREDENTIALS),
+        detail: 'schedule-aware answers',
+      },
+    ],
+  };
+}
+
+function buildActions(hasDb: boolean, leave: LeavePanel, checkins: CheckinPanel): DesktopAction[] {
+  return [
+    {
+      id: 'leave-nudge',
+      label: 'Draft leave follow-up',
+      intent: 'manager-action',
+      prompt: 'Draft a concise Slack follow-up for leave requests that need manager action.',
+      disabled: !hasDb || leave.pendingCount === 0,
+    },
+    {
+      id: 'checkin-summary',
+      label: 'Summarize check-ins',
+      intent: 'weekly-report',
+      prompt: `Summarize weekly check-in status for ${checkins.weekId}, including pending workers and managers.`,
+      disabled: !hasDb,
+    },
+    {
+      id: 'policy-search',
+      label: 'Search leave policy',
+      intent: 'docs-search',
+      prompt: 'Search docs for the leave policy and summarize approval rules.',
+    },
+    {
+      id: 'reviewer-nudge',
+      label: 'Draft reviewer nudge',
+      intent: 'slack-draft',
+      prompt: 'Draft a warm Slack nudge for managers who have not completed weekly reviews.',
+      disabled: !hasDb || checkins.pendingManagers === 0,
+    },
+  ];
+}
+
+function buildEmptyLeave(): LeavePanel {
+  return {
+    pendingCount: 0,
+    oooTodayCount: 0,
+    remindersDue: 0,
+    pending: [],
+    oooToday: [],
+    audit: [],
+  };
+}
+
+function buildEmptyCheckins(): CheckinPanel {
+  return {
+    weekId: getCurrentWeekId(),
+    pendingWorkers: 0,
+    pendingManagers: 0,
+    workersTotal: 0,
+    managersTotal: 0,
+    workersDone: 0,
+    managersDone: 0,
+    repeatDefaulters: [],
+    pendingWorkerNames: [],
+    pendingManagerIds: [],
+  };
+}
+
+async function buildDashboard(): Promise<DesktopSnapshot> {
+  const [databaseSnapshot, redisHealth] = await Promise.all([
+    timed(readDatabaseSnapshot),
     timed(checkRedis),
   ]);
-
-  const databaseOnline = databaseHealth.data === 'connected';
-  const redisOnline = redisHealth.data === 'connected';
-  const sheetsConfigured = Boolean(
-    process.env.GOOGLE_SERVICE_ACCOUNT_KEY && process.env.WEEKLY_CHECKINS_SPREADSHEET_ID,
-  );
-  const slackConfigured = Boolean(process.env.SLACK_BOT_TOKEN && process.env.SLACK_APP_TOKEN);
-  const toolCount = toolRegistry.size;
-
+  const tools = buildToolsPanel();
+  const hasDb = Boolean(databaseSnapshot.data);
+  const hasRedis = redisHealth.data === 'connected';
+  const leave = databaseSnapshot.data?.leave ?? buildEmptyLeave();
+  const checkins = databaseSnapshot.data?.checkins ?? buildEmptyCheckins();
+  const readyTools = tools.configured.filter((tool) => tool.ready).length;
   const systems: SystemStatus[] = [
     {
       name: 'Postgres',
-      state: databaseOnline ? 'online' : databaseHealth.error ? 'offline' : 'degraded',
-      detail: databaseHealth.error ?? `Database is ${databaseHealth.data}.`,
-      latencyMs: databaseHealth.latencyMs,
+      state: hasDb ? 'online' : 'offline',
+      detail: databaseSnapshot.error ?? 'Leave, OOO, audit, and check-in data available.',
+      latencyMs: databaseSnapshot.latencyMs,
     },
     {
       name: 'Redis Queue',
-      state: redisOnline ? 'online' : redisHealth.error ? 'offline' : 'degraded',
+      state: hasRedis ? 'online' : redisHealth.error ? 'offline' : 'degraded',
       detail: redisHealth.error ?? `Reminder queue is ${redisHealth.data}.`,
       latencyMs: redisHealth.latencyMs,
     },
     {
-      name: 'Google Sheets',
-      state: sheetsConfigured ? 'online' : 'degraded',
-      detail: sheetsConfigured
-        ? 'Weekly roster and response sheets are configured.'
-        : 'Set GOOGLE_SERVICE_ACCOUNT_KEY and WEEKLY_CHECKINS_SPREADSHEET_ID.',
+      name: 'Slack Runtime',
+      state: tools.configured.find((tool) => tool.name === 'Slack')?.ready ? 'online' : 'degraded',
+      detail: 'Bot tokens and socket mode connection config.',
       latencyMs: 1,
     },
     {
-      name: 'Tool Registry',
-      state: toolCount > 0 ? 'online' : 'offline',
-      detail: `${Array.from(toolRegistry.keys()).join(', ')} registered for orchestration.`,
-      latencyMs: 1,
-    },
-    {
-      name: 'Slack Bot Runtime',
-      state: slackConfigured ? 'online' : 'degraded',
-      detail: 'Socket mode tokens are checked from environment configuration.',
+      name: 'LLM + Tools',
+      state: tools.registered.length > 0 && tools.configured.find((tool) => tool.name === 'LLM')?.ready ? 'online' : 'degraded',
+      detail: `${tools.registered.join(', ')} registered.`,
       latencyMs: 1,
     },
   ];
-
-  const onlineCount = systems.filter((system) => system.state === 'online').length;
-  const readiness = Math.round((onlineCount / systems.length) * 100);
-  const hasLeaveAttention = !databaseOnline || !redisOnline || !slackConfigured;
-  const hasCheckinAttention = !databaseOnline || !redisOnline || !sheetsConfigured || !slackConfigured;
+  const onlineSystems = systems.filter((system) => system.state === 'online').length;
+  const readiness = Math.round(((onlineSystems + readyTools / tools.configured.length) / (systems.length + 1)) * 100);
+  const needsAttention = leave.pendingCount + leave.remindersDue + checkins.pendingWorkers + checkins.pendingManagers;
 
   return {
     source: 'live',
     generatedAt: new Date().toISOString(),
     readiness,
+    assistant: {
+      mode: needsAttention > 0 ? 'Operator' : 'Standby',
+      state: readiness > 75 ? 'online' : readiness > 45 ? 'degraded' : 'offline',
+      headline: needsAttention > 0 ? `${needsAttention} live items need attention` : 'All visible systems are calm',
+      detail: hasDb
+        ? 'This view is backed by live leave, check-in, audit, OOO, and tool configuration data.'
+        : 'Database is unavailable, so the assistant is showing setup state only.',
+      lastSync: nowTime(),
+    },
     systems,
-    workflows: [
+    leave,
+    checkins,
+    tools,
+    actions: buildActions(hasDb, leave, checkins),
+    timeline: [
       {
-        id: 'weekly-checkins',
-        name: 'Weekly Check-ins',
-        owner: 'People Ops',
-        status: hasCheckinAttention ? 'attention' : 'running',
-        progress: hasCheckinAttention ? 62 : 88,
-        detail: hasCheckinAttention
-          ? 'Check database, Redis, or Google Sheets configuration before the next reminder window.'
-          : 'Roster, reminders, and leadership reporting are ready.',
-        signal: 'Google Sheets + Slack + Postgres',
+        at: nowTime(),
+        title: hasDb ? 'Live data loaded' : 'Database unavailable',
+        detail: hasDb ? 'Postgres returned leave, OOO, audit, and check-in data.' : databaseSnapshot.error ?? 'No database data.',
+        level: hasDb ? 'ok' : 'critical',
       },
       {
-        id: 'leave-approvals',
-        name: 'Leave Approvals',
-        owner: 'Managers',
-        status: hasLeaveAttention ? 'attention' : 'running',
-        progress: hasLeaveAttention ? 58 : 84,
-        detail: hasLeaveAttention
-          ? 'Leave workflows need database or queue recovery before approval SLAs are reliable.'
-          : 'Leave submission, approval, reminders, and audit paths are available.',
-        signal: 'Slack + Postgres + Redis',
+        at: nowTime(),
+        title: `${leave.pendingCount} leave requests pending`,
+        detail: leave.pendingCount > 0 ? 'Manager action is needed before SLA drift.' : 'No pending leave approvals found.',
+        level: leave.pendingCount > 0 ? 'watch' : 'ok',
       },
       {
-        id: 'client-memory',
-        name: 'Client Memory',
-        owner: 'Revenue',
-        status: process.env.ATTIO_API_KEY ? 'running' : 'attention',
-        progress: process.env.ATTIO_API_KEY ? 91 : 44,
-        detail: process.env.ATTIO_API_KEY
-          ? 'Attio is configured for people, company, and deal context.'
-          : 'Set ATTIO_API_KEY so client memory can use live CRM records.',
-        signal: 'Attio CRM',
+        at: nowTime(),
+        title: `${checkins.pendingManagers} manager reviews pending`,
+        detail: checkins.pendingManagers > 0 ? 'Weekly direction is not closed yet.' : 'No pending manager reviews found.',
+        level: checkins.pendingManagers > 0 ? 'watch' : 'ok',
       },
       {
-        id: 'calendar-guard',
-        name: 'Calendar Guard',
-        owner: 'Ops',
-        status: process.env.GOOGLE_CLIENT_ID ? 'running' : 'idle',
-        progress: process.env.GOOGLE_CLIENT_ID ? 79 : 52,
-        detail: process.env.GOOGLE_CLIENT_ID
-          ? 'Calendar auth appears configured for schedule-aware answers.'
-          : 'Google Calendar can be connected when OAuth credentials are configured.',
-        signal: 'Google Calendar',
-      },
-    ],
-    queue: [
-      {
-        id: 'SYS-CHECKINS',
-        type: 'Health',
-        title: hasCheckinAttention ? 'Weekly check-ins need attention' : 'Weekly check-ins are ready',
-        detail: hasCheckinAttention
-          ? 'Inspect database, Redis, and Sheets configuration before scheduled nudges run.'
-          : 'Worker reminders, manager reviews, and leadership reports can run.',
-        urgency: hasCheckinAttention ? 'high' : 'low',
-        eta: 'Before next cron',
-      },
-      {
-        id: 'SYS-LEAVE',
-        type: 'Health',
-        title: hasLeaveAttention ? 'Leave approvals need recovery' : 'Leave approvals are healthy',
-        detail: hasLeaveAttention
-          ? 'Approval actions depend on Postgres and Redis reminder queues.'
-          : 'Approval modals, reminders, and audit logs are available.',
-        urgency: hasLeaveAttention ? 'high' : 'low',
-        eta: '48h SLA',
-      },
-      {
-        id: 'SYS-TOOLS',
-        type: 'Tools',
-        title: `${toolCount} orchestration tools registered`,
-        detail: 'The command bridge can route requests to docs search, CRM, and calendar tools.',
-        urgency: 'medium',
-        eta: 'On demand',
-      },
-    ],
-    briefs: [
-      {
-        title: 'Live backend readout',
-        body: `The dashboard API checked ${systems.length} systems. ${onlineCount} are online and the UI is using live data from this server.`,
-        tone: onlineCount === systems.length ? 'warm' : 'sharp',
-      },
-      {
-        title: 'Next useful connection',
-        body: 'Expose real queue counts and recent audit events next, then this page can become the non-Slack operator console for Lumo.',
-        tone: 'calm',
-      },
-    ],
-    metrics: [
-      { label: 'Systems Online', value: `${onlineCount}/${systems.length}`, delta: `${readiness}% ready` },
-      { label: 'Tools', value: String(toolCount), delta: 'registered' },
-      { label: 'Check-ins', value: hasCheckinAttention ? 'Watch' : 'OK', delta: sheetsConfigured ? 'sheets ready' : 'needs sheets' },
-      { label: 'Leave', value: hasLeaveAttention ? 'Watch' : 'OK', delta: databaseOnline && redisOnline ? 'queues ready' : 'needs infra' },
-    ],
-    commandSuggestions: [
-      'Summarize this week of check-ins',
-      'Find leave requests that need manager action',
-      'Search docs for the leave policy',
-      'Draft a Slack nudge for late reviewers',
-    ],
-    trace: [
-      {
-        at: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        label: 'dashboard-api',
-        detail: 'Generated live status snapshot for the frontend.',
-      },
-      {
-        at: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        label: 'toolRegistry',
-        detail: `${Array.from(toolRegistry.keys()).join(', ')} ready for orchestrator routing.`,
-      },
-      {
-        at: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        label: 'healthCheck',
-        detail: 'Probed Postgres, Redis, Sheets config, Slack config, and registered tools.',
+        at: nowTime(),
+        title: `${tools.registered.length} orchestration tools registered`,
+        detail: tools.registered.join(', ') || 'No tools registered.',
+        level: tools.registered.length > 0 ? 'ok' : 'critical',
       },
     ],
   };
